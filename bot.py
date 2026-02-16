@@ -4,10 +4,14 @@ import urllib.parse
 import os
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-WEB_APP_URL = os.getenv('WEB_APP_URL', 'https://your-app.netlify.app')
+WEB_APP_URL = os.getenv('WEB_APP_URL')
 
 if not BOT_TOKEN:
     print("ОШИБКА: BOT_TOKEN не установлен!")
+    exit(1)
+
+if not WEB_APP_URL:
+    print("ОШИБКА: WEB_APP_URL не установлен!")
     exit(1)
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -15,24 +19,28 @@ bot = telebot.TeleBot(BOT_TOKEN)
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message, 
-                 "Привет! 👋\n\n"
-                 "Отправь мне фотографию товара, и я помогу создать карточку желания.\n\n"
-                 "Просто отправь фото — я открою мини-приложение для анализа.")
+        "Привет! 👋\n\n"
+        "Отправь мне фотографию товара, и я помогу создать карточку желания.\n\n"
+        "Просто отправь фото — я открою мини-приложение для анализа.")
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     try:
         photo = message.photo[-1]
         file_id = photo.file_id
+        
         file_info = bot.get_file(file_id)
-        file_url = f"https://api.telegram.org/file/bot{bot.token}/{file_info.file_path}"
+        file_path = file_info.file_path
+        
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+        
         encoded_url = urllib.parse.quote(file_url, safe='')
         start_param = f"img_url_{encoded_url}"
         
         keyboard = types.InlineKeyboardMarkup()
         button = types.InlineKeyboardButton(
             text="📸 Анализировать изображение",
-            web_app=types.WebAppInfo(url=f"{WEB_APP_URL}?startapp={start_param}")
+            web_app=types.WebAppInfo(url=f"{WEB_APP_URL}?start_param={start_param}")
         )
         keyboard.add(button)
         
@@ -42,8 +50,9 @@ def handle_photo(message):
             reply_markup=keyboard
         )
     except Exception as e:
-        print(f"Ошибка при обработке фото: {e}")
-        bot.reply_to(message, "Произошла ошибка. Попробуй отправить фото еще раз.")
+        error_msg = str(e)
+        print(f"Ошибка при обработке фото: {error_msg}")
+        bot.reply_to(message, f"Произошла ошибка: {error_msg}. Попробуй отправить фото еще раз.")
 
 @bot.message_handler(func=lambda message: True)
 def handle_all(message):

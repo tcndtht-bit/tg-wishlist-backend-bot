@@ -38,15 +38,24 @@ def handle_photo(message):
         
         file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
         
+        # Кодируем URL для передачи в start_param
         encoded_url = urllib.parse.quote(file_url, safe='')
         start_param = f"img_url_{encoded_url}"
+        
+        # Формируем URL с start_param в hash (Telegram передает через initData)
+        # Также добавляем в query на случай, если initData не работает
+        web_app_url = f"{WEB_APP_URL}#start_param={urllib.parse.quote(start_param)}"
         
         keyboard = types.InlineKeyboardMarkup()
         button = types.InlineKeyboardButton(
             text="📸 Анализировать изображение",
-            web_app=types.WebAppInfo(url=f"{WEB_APP_URL}?start_param={start_param}")
+            web_app=types.WebAppInfo(url=web_app_url)
         )
         keyboard.add(button)
+        
+        # Логируем для отладки
+        print(f"Start param: {start_param}")
+        print(f"Web app URL: {web_app_url}")
         
         bot.reply_to(message, 
             "Открываю мини-приложение для анализа изображения...\n\n"

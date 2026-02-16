@@ -1,0 +1,10 @@
+```markdown
+# Telegram Wishlist Bot
+
+Бот для создания карточек желаний из фотографий товаров.
+
+## Переменные окружения
+
+- `BOT_TOKEN` - 8052653990:AAF-qnFj9P_S2l7CKn4pB9p2dhIRYWFpWmg
+- `WEB_APP_URL` - eclectic-hamster-049abf.netlify.app
+```

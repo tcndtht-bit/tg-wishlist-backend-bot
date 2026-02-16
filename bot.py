@@ -14,6 +14,10 @@ if not WEB_APP_URL:
     print("ОШИБКА: WEB_APP_URL не установлен!")
     exit(1)
 
+# Убеждаемся, что URL начинается с https://
+if not WEB_APP_URL.startswith('http://') and not WEB_APP_URL.startswith('https://'):
+    WEB_APP_URL = f'https://{WEB_APP_URL}'
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
 @bot.message_handler(commands=['start'])

@@ -1,4 +1,4 @@
-```python
+python
 import telebot
 from telebot import types
 import urllib.parse
@@ -67,4 +67,3 @@ if __name__ == '__main__':
     print("Бот запущен!")
     print(f"WEB_APP_URL: {WEB_APP_URL}")
     bot.polling(none_stop=True)
-```

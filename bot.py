@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import re
 import os
@@ -6,6 +7,7 @@ import urllib.parse
 import telebot
 from telebot import types
 import requests
+from PIL import Image
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 WEB_APP_URL = os.getenv('WEB_APP_URL')
@@ -54,21 +56,34 @@ def handle_photo(message):
         file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
         img_resp = requests.get(file_url, timeout=15)
         img_resp.raise_for_status()
-        img_b64 = base64.b64encode(img_resp.content).decode()
+        img_b64_raw = base64.b64encode(img_resp.content).decode()
         r = requests.post(
             f'{LINK_SCRAPER_URL}/analyze-image',
-            json={'image': img_b64},
+            json={'image': img_b64_raw},
             timeout=30,
         )
         r.raise_for_status()
         data = r.json()
-        # imgUrl не передаём — короткий URL для регионов с ограничениями; мини-апп использует placeholder
+        # Сжимаем изображение для передачи в start_param (ограничение длины URL)
+        img_b64 = None
+        try:
+            img = Image.open(io.BytesIO(img_resp.content))
+            if img.mode in ('RGBA', 'P'):
+                img = img.convert('RGB')
+            img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=85, optimize=True)
+            img_b64 = base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            pass
         payload = {
             'n': data.get('name') or 'N/A',
             'p': data.get('price'),
             'c': data.get('currency'),
             's': data.get('size'),
         }
+        if img_b64:
+            payload['i'] = img_b64
         start_param = 'img_' + pack_start_param(payload)
         app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
         keyboard = types.InlineKeyboardMarkup()
@@ -147,6 +162,8 @@ def handle_link(message):
             's': data.get('size'),
             'l': target_url[:500],
         }
+        if data.get('image'):
+            payload['i'] = data.get('image')[:2000]
         start_param = 'link_' + pack_start_param(payload)
         app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
         keyboard = types.InlineKeyboardMarkup()

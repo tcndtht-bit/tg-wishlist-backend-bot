@@ -3,11 +3,20 @@ import io
 import json
 import re
 import os
+import traceback
 import urllib.parse
 import telebot
 from telebot import types
 import requests
-from PIL import Image
+try:
+    from PIL import Image
+    try:
+        _RESAMPLE = Image.Resampling.LANCZOS
+    except AttributeError:
+        _RESAMPLE = Image.LANCZOS
+    _HAS_PILLOW = True
+except ImportError:
+    _HAS_PILLOW = False
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 WEB_APP_URL = os.getenv('WEB_APP_URL')
@@ -64,18 +73,18 @@ def handle_photo(message):
         )
         r.raise_for_status()
         data = r.json()
-        # Сжимаем изображение для передачи в start_param (ограничение длины URL)
         img_b64 = None
-        try:
-            img = Image.open(io.BytesIO(img_resp.content))
-            if img.mode in ('RGBA', 'P'):
-                img = img.convert('RGB')
-            img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=85, optimize=True)
-            img_b64 = base64.b64encode(buf.getvalue()).decode()
-        except Exception:
-            pass
+        if _HAS_PILLOW:
+            try:
+                img = Image.open(io.BytesIO(img_resp.content))
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+                img.thumbnail((1024, 1024), _RESAMPLE)
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=85, optimize=True)
+                img_b64 = base64.b64encode(buf.getvalue()).decode()
+            except Exception as e:
+                print(f'Pillow resize skip: {e}')
         payload = {
             'n': data.get('name') or 'N/A',
             'p': data.get('price'),
@@ -94,6 +103,7 @@ def handle_photo(message):
         bot.reply_to(message, 'Нажми кнопку ниже, чтобы создать карточку 👇', reply_markup=keyboard)
     except Exception as e:
         print(f'Ошибка analyze-image: {e}')
+        traceback.print_exc()
         bot.reply_to(message, 'Не удалось проанализировать фото. Попробуй ещё раз.')
 
 

@@ -1,5 +1,4 @@
 import base64
-import io
 import json
 import re
 import os
@@ -8,15 +7,6 @@ import urllib.parse
 import telebot
 from telebot import types
 import requests
-try:
-    from PIL import Image
-    try:
-        _RESAMPLE = Image.Resampling.LANCZOS
-    except AttributeError:
-        _RESAMPLE = Image.LANCZOS
-    _HAS_PILLOW = True
-except ImportError:
-    _HAS_PILLOW = False
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 WEB_APP_URL = os.getenv('WEB_APP_URL')
@@ -73,26 +63,13 @@ def handle_photo(message):
         )
         r.raise_for_status()
         data = r.json()
-        img_b64 = None
-        if _HAS_PILLOW:
-            try:
-                img = Image.open(io.BytesIO(img_resp.content))
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
-                img.thumbnail((1024, 1024), _RESAMPLE)
-                buf = io.BytesIO()
-                img.save(buf, format='JPEG', quality=85, optimize=True)
-                img_b64 = base64.b64encode(buf.getvalue()).decode()
-            except Exception as e:
-                print(f'Pillow resize skip: {e}')
+        # Не передаём изображение в payload — reply markup Telegram ограничен ~4KB
         payload = {
             'n': data.get('name') or 'N/A',
             'p': data.get('price'),
             'c': data.get('currency'),
             's': data.get('size'),
         }
-        if img_b64:
-            payload['i'] = img_b64
         start_param = 'img_' + pack_start_param(payload)
         app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
         keyboard = types.InlineKeyboardMarkup()

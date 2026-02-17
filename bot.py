@@ -63,13 +63,14 @@ def handle_photo(message):
         )
         r.raise_for_status()
         data = r.json()
-        # Не передаём изображение в payload — reply markup Telegram ограничен ~4KB
         payload = {
             'n': data.get('name') or 'N/A',
             'p': data.get('price'),
             'c': data.get('currency'),
             's': data.get('size'),
         }
+        if data.get('image'):
+            payload['i'] = data.get('image')[:2000]
         start_param = 'img_' + pack_start_param(payload)
         app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
         keyboard = types.InlineKeyboardMarkup()

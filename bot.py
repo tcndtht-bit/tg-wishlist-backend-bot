@@ -1,3 +1,4 @@
+import re
 import telebot
 from telebot import types
 import urllib.parse
@@ -14,18 +15,24 @@ if not WEB_APP_URL:
     print("ОШИБКА: WEB_APP_URL не установлен!")
     exit(1)
 
-# Убеждаемся, что URL начинается с https://
 if not WEB_APP_URL.startswith('http://') and not WEB_APP_URL.startswith('https://'):
     WEB_APP_URL = f'https://{WEB_APP_URL}'
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
+
+def is_url(text):
+    return bool(re.match(r'^https?://\S+$', (text or '').strip()))
+
+
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, 
+    bot.reply_to(message,
         "Привет! 👋\n\n"
-        "Отправь мне фотографию товара, и я помогу создать карточку желания.\n\n"
-        "Просто отправь фото — я открою мини-приложение для анализа.")
+        "Отправь фото товара или ссылку — я помогу создать карточку желания.\n\n"
+        "📸 Фото — анализ изображения\n"
+        "🔗 Ссылка — анализ страницы товара")
+
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -67,11 +74,27 @@ def handle_photo(message):
         print(f"Ошибка при обработке фото: {error_msg}")
         bot.reply_to(message, f"Произошла ошибка: {error_msg}. Попробуй отправить фото еще раз.")
 
+
+@bot.message_handler(func=lambda m: m.content_type == 'text' and is_url(m.text))
+def handle_link(message):
+    text = message.text.strip()
+    encoded_url = urllib.parse.quote(text, safe='')
+    start_param = f"link_{encoded_url}"
+    web_app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text="🔗 Анализировать ссылку",
+        web_app=types.WebAppInfo(url=web_app_url)
+    ))
+    bot.reply_to(message,
+        "Нажми кнопку ниже, чтобы открыть мини-приложение и создать карточку желания по ссылке.",
+        reply_markup=keyboard)
+
+
 @bot.message_handler(func=lambda message: True)
 def handle_all(message):
-    bot.reply_to(message, 
-        "Отправь мне фотографию товара, и я помогу создать карточку желания! 📸"
-    )
+    bot.reply_to(message,
+        "Отправь фото товара или ссылку на страницу — я помогу создать карточку желания! 📸🔗")
 
 if __name__ == '__main__':
     print("Бот запущен!")

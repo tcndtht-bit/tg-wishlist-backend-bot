@@ -1,11 +1,13 @@
 import re
+import os
+import urllib.parse
 import telebot
 from telebot import types
-import urllib.parse
-import os
+import requests
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 WEB_APP_URL = os.getenv('WEB_APP_URL')
+LINK_SCRAPER_URL = os.getenv('LINK_SCRAPER_URL', '').rstrip('/')
 
 if not BOT_TOKEN:
     print("ОШИБКА: BOT_TOKEN не установлен!")
@@ -29,9 +31,10 @@ def is_url(text):
 def start(message):
     bot.reply_to(message,
         "Привет! 👋\n\n"
-        "Отправь фото товара или ссылку — я помогу создать карточку желания.\n\n"
+        "Отправь фото, ссылку или текст «хочу ...» — я помогу создать карточку желания.\n\n"
         "📸 Фото — анализ изображения\n"
-        "🔗 Ссылка — анализ страницы товара")
+        "🔗 Ссылка — анализ страницы товара\n"
+        "📝 «Хочу ...» — карточка из текста")
 
 
 @bot.message_handler(content_types=['photo'])
@@ -75,6 +78,43 @@ def handle_photo(message):
         bot.reply_to(message, f"Произошла ошибка: {error_msg}. Попробуй отправить фото еще раз.")
 
 
+def starts_with_want(text):
+    return (text or '').strip().lower().startswith('хочу')
+
+
+@bot.message_handler(func=lambda m: m.content_type == 'text' and starts_with_want(m.text))
+def handle_want_text(message):
+    text = message.text.strip()
+    if not LINK_SCRAPER_URL:
+        bot.reply_to(message, 'Сервис временно недоступен. Попробуй позже.')
+        return
+    try:
+        r = requests.post(
+            f'{LINK_SCRAPER_URL}/store-wish-text',
+            json={'text': text},
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        wid = data.get('id')
+        if not wid:
+            raise ValueError('No id returned')
+        start_param = f'text_{wid}'
+        app_url = f'{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe="")}'
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            text='📝 Создать карточку',
+            web_app=types.WebAppInfo(url=app_url),
+        ))
+        bot.reply_to(message,
+            'Нажми кнопку ниже, чтобы создать карточку желания.',
+            reply_markup=keyboard,
+        )
+    except Exception as e:
+        print(f'Ошибка store-wish-text: {e}')
+        bot.reply_to(message, 'Не удалось сохранить текст. Попробуй ещё раз.')
+
+
 @bot.message_handler(func=lambda m: m.content_type == 'text' and is_url(m.text))
 def handle_link(message):
     text = message.text.strip()
@@ -91,10 +131,10 @@ def handle_link(message):
         reply_markup=keyboard)
 
 
-@bot.message_handler(func=lambda message: True)
+@bot.message_handler(func=lambda m: True)
 def handle_all(message):
     bot.reply_to(message,
-        "Отправь фото товара или ссылку на страницу — я помогу создать карточку желания! 📸🔗")
+        'Отправь фото, ссылку или напиши «хочу ...» — я помогу создать карточку! 📸🔗📝')
 
 if __name__ == '__main__':
     print("Бот запущен!")

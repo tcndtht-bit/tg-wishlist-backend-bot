@@ -62,12 +62,12 @@ def handle_photo(message):
         )
         r.raise_for_status()
         data = r.json()
+        # imgUrl не передаём — короткий URL для регионов с ограничениями; мини-апп использует placeholder
         payload = {
             'n': data.get('name') or 'N/A',
             'p': data.get('price'),
             'c': data.get('currency'),
             's': data.get('size'),
-            'imgUrl': file_url,
         }
         start_param = 'img_' + pack_start_param(payload)
         app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
@@ -140,16 +140,12 @@ def handle_link(message):
         )
         r.raise_for_status()
         data = r.json()
-        img_url = data.get('image')
-        if img_url and isinstance(img_url, str) and len(img_url) > 500:
-            img_url = None
         payload = {
-            'n': data.get('name') or 'N/A',
+            'n': (data.get('name') or 'N/A')[:80],
             'p': data.get('price'),
             'c': data.get('currency'),
             's': data.get('size'),
-            'l': target_url,
-            'i': img_url,
+            'l': target_url[:500],
         }
         start_param = 'link_' + pack_start_param(payload)
         app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"

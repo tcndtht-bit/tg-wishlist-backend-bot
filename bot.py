@@ -25,6 +25,10 @@ if not WEB_APP_URL.startswith('http://') and not WEB_APP_URL.startswith('https:/
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
+TIMEOUT_FAST = 15
+TIMEOUT_ANALYZE = 30
+TIMEOUT_SCRAPE = 45
+
 
 def is_url(text):
     return bool(re.match(r'^https?://\S+$', (text or '').strip()))
@@ -32,6 +36,24 @@ def is_url(text):
 
 def pack_start_param(payload):
     return base64.b64encode(json.dumps(payload).encode()).decode()
+
+
+def reply_with_card_button(message, start_param, emoji, label):
+    app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text=f'{emoji} {label}',
+        web_app=types.WebAppInfo(url=app_url),
+    ))
+    bot.reply_to(message, 'Нажми кнопку ниже, чтобы создать карточку 👇', reply_markup=keyboard)
+
+
+def send_typing(message):
+    """Показать «печатает...» пока идёт анализ."""
+    try:
+        bot.send_chat_action(message.chat.id, 'typing')
+    except Exception:
+        pass
 
 
 @bot.message_handler(commands=['start'])
@@ -50,16 +72,19 @@ def handle_photo(message):
         bot.reply_to(message, 'Сервис временно недоступен. Попробуй позже.')
         return
     try:
+        send_typing(message)
         photo = message.photo[-1]
         file_info = bot.get_file(photo.file_id)
         file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
-        img_resp = requests.get(file_url, timeout=15)
+        img_resp = requests.get(file_url, timeout=TIMEOUT_FAST)
         img_resp.raise_for_status()
         img_b64_raw = base64.b64encode(img_resp.content).decode()
+
+        send_typing(message)
         r = requests.post(
             f'{LINK_SCRAPER_URL}/analyze-image',
             json={'image': img_b64_raw},
-            timeout=30,
+            timeout=TIMEOUT_ANALYZE,
         )
         r.raise_for_status()
         data = r.json()
@@ -71,14 +96,7 @@ def handle_photo(message):
         }
         if data.get('image'):
             payload['i'] = data.get('image')[:2000]
-        start_param = 'img_' + pack_start_param(payload)
-        app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(
-            text='📸 Создать карточку',
-            web_app=types.WebAppInfo(url=app_url),
-        ))
-        bot.reply_to(message, 'Нажми кнопку ниже, чтобы создать карточку 👇', reply_markup=keyboard)
+        reply_with_card_button(message, 'img_' + pack_start_param(payload), '📸', 'Создать карточку')
     except Exception as e:
         print(f'Ошибка analyze-image: {e}')
         traceback.print_exc()
@@ -96,37 +114,24 @@ def handle_want_text(message):
         bot.reply_to(message, 'Сервис временно недоступен. Попробуй позже.')
         return
     try:
+        send_typing(message)
         r = requests.post(
-            f'{LINK_SCRAPER_URL}/store-wish-text',
+            f'{LINK_SCRAPER_URL}/analyze-text',
             json={'text': text},
-            timeout=10,
+            timeout=TIMEOUT_ANALYZE,
         )
         r.raise_for_status()
-        wid = r.json().get('id')
-        if not wid:
-            raise ValueError('No id returned')
-        r2 = requests.get(
-            f'{LINK_SCRAPER_URL}/wish-text?id={wid}&analyze=1',
-            timeout=20,
-        )
-        r2.raise_for_status()
-        data = r2.json()
+        data = r.json()
         payload = {
             'n': data.get('name') or 'Желание',
             'p': data.get('price'),
             'c': data.get('currency'),
             's': data.get('size'),
         }
-        start_param = 'text_' + pack_start_param(payload)
-        app_url = f'{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe="")}'
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(
-            text='📝 Создать карточку',
-            web_app=types.WebAppInfo(url=app_url),
-        ))
-        bot.reply_to(message, 'Нажми кнопку ниже, чтобы создать карточку 👇', reply_markup=keyboard)
+        reply_with_card_button(message, 'text_' + pack_start_param(payload), '📝', 'Создать карточку')
     except Exception as e:
-        print(f'Ошибка wish-text: {e}')
+        print(f'Ошибка analyze-text: {e}')
+        traceback.print_exc()
         bot.reply_to(message, 'Не удалось проанализировать текст. Попробуй ещё раз.')
 
 
@@ -137,9 +142,10 @@ def handle_link(message):
         bot.reply_to(message, 'Сервис временно недоступен. Попробуй позже.')
         return
     try:
+        send_typing(message)
         r = requests.get(
             f'{LINK_SCRAPER_URL}/?url={urllib.parse.quote(target_url, safe="")}',
-            timeout=45,
+            timeout=TIMEOUT_SCRAPE,
         )
         r.raise_for_status()
         data = r.json()
@@ -152,16 +158,10 @@ def handle_link(message):
         }
         if data.get('image'):
             payload['i'] = data.get('image')[:2000]
-        start_param = 'link_' + pack_start_param(payload)
-        app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(
-            text='🔗 Создать карточку',
-            web_app=types.WebAppInfo(url=app_url),
-        ))
-        bot.reply_to(message, 'Нажми кнопку ниже, чтобы создать карточку 👇', reply_markup=keyboard)
+        reply_with_card_button(message, 'link_' + pack_start_param(payload), '🔗', 'Создать карточку')
     except Exception as e:
         print(f'Ошибка parse link: {e}')
+        traceback.print_exc()
         bot.reply_to(message, 'Не удалось проанализировать ссылку. Попробуй ещё раз.')
 
 

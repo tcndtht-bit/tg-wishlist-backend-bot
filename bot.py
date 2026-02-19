@@ -41,8 +41,11 @@ TIMEOUT_SCRAPE = int(os.getenv('TIMEOUT_SCRAPE', '45'))
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 # ── Reusable session for connection pooling ─────────────────
+SCRAPER_API_KEY = os.getenv('SCRAPER_API_KEY', '')
 _session = requests.Session()
 _session.headers['User-Agent'] = 'WishlistBot/1.0'
+if SCRAPER_API_KEY:
+    _session.headers['x-api-key'] = SCRAPER_API_KEY
 
 # ── Per-user rate limiter ───────────────────────────────────
 _rate = {}

@@ -72,6 +72,11 @@ def pack_start_param(payload):
     return base64.b64encode(json.dumps(payload).encode()).decode()
 
 
+def is_ru(message):
+    lang = getattr(message.from_user, 'language_code', '') or ''
+    return lang.startswith('ru')
+
+
 def safe_reply(message, text, reply_markup=None):
     try:
         bot.reply_to(message, text, reply_markup=reply_markup)
@@ -79,14 +84,16 @@ def safe_reply(message, text, reply_markup=None):
         log.warning("safe_reply failed: %s", e)
 
 
-def reply_with_card_button(message, start_param, emoji, label):
+def reply_with_card_button(message, start_param, emoji):
+    label = 'Создать карточку' if is_ru(message) else 'Create my wish'
+    hint = 'Нажми кнопку ниже, чтобы создать карточку 👇' if is_ru(message) else 'Tap the button below to create a wish 👇'
     app_url = f"{WEB_APP_URL}#tgWebAppStartParam={urllib.parse.quote(start_param, safe='')}"
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(types.InlineKeyboardButton(
         text=f'{emoji} {label}',
         web_app=types.WebAppInfo(url=app_url),
     ))
-    safe_reply(message, 'Нажми кнопку ниже, чтобы создать карточку 👇', reply_markup=keyboard)
+    safe_reply(message, hint, reply_markup=keyboard)
 
 
 def send_typing(message):
@@ -97,34 +104,43 @@ def send_typing(message):
 
 
 def starts_with_want(text):
-    return (text or '').strip().lower().startswith('хочу')
+    t = (text or '').strip().lower()
+    return t.startswith('хочу') or t.startswith('i wish')
 
 
 # ── Handlers ────────────────────────────────────────────────
 @bot.message_handler(commands=['start'])
 def start(message):
-    safe_reply(message,
-        "Привет! 👋\n\n"
-        "Отправь фото, ссылку или текст «хочу ...» — я помогу создать карточку желания.\n\n"
-        "📸 Фото — анализ изображения\n"
-        "🔗 Ссылка — анализ страницы товара\n"
-        "📝 «Хочу ...» — карточка из текста")
+    if is_ru(message):
+        safe_reply(message,
+            "Привет! 👋\n\n"
+            "Отправь фото, ссылку или текст «хочу ...» — я помогу создать карточку желания.\n\n"
+            "📸 Фото — анализ изображения\n"
+            "🔗 Ссылка — анализ страницы товара\n"
+            "📝 «Хочу ...» — карточка из текста")
+    else:
+        safe_reply(message,
+            "Hey! 👋\n\n"
+            "Send a photo, a link, or type \"I wish ...\" — I'll help you create a wish card.\n\n"
+            "📸 Photo — image analysis\n"
+            "🔗 Link — product page analysis\n"
+            "📝 \"I wish ...\" — card from text")
 
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     if _is_rate_limited(message.chat.id):
-        safe_reply(message, 'Слишком много запросов. Подожди немного ⏳')
+        safe_reply(message, 'Слишком много запросов. Подожди немного ⏳' if is_ru(message) else 'Too many requests. Hold on ⏳')
         return
     if not LINK_SCRAPER_URL:
-        safe_reply(message, 'Сервис временно недоступен. Попробуй позже.')
+        safe_reply(message, 'Сервис временно недоступен. Попробуй позже.' if is_ru(message) else 'Service temporarily unavailable. Try later.')
         return
     try:
         send_typing(message)
         photo = message.photo[-1]
         file_info = bot.get_file(photo.file_id)
         if file_info.file_size and file_info.file_size > MAX_FILE_SIZE:
-            safe_reply(message, 'Фото слишком большое (макс 5 МБ). Сожми и попробуй снова.')
+            safe_reply(message, 'Фото слишком большое (макс 5 МБ). Сожми и попробуй снова.' if is_ru(message) else 'Photo is too large (max 5 MB). Compress and try again.')
             return
         file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
         img_resp = _session.get(file_url, timeout=TIMEOUT_FAST)
@@ -147,20 +163,20 @@ def handle_photo(message):
         }
         if data.get('image'):
             payload['i'] = data.get('image')[:2000]
-        reply_with_card_button(message, 'img_' + pack_start_param(payload), '📸', 'Создать карточку')
+        reply_with_card_button(message, 'img_' + pack_start_param(payload), '📸')
     except Exception as e:
         log.error('analyze-image error: %s', e, exc_info=True)
-        safe_reply(message, 'Не удалось проанализировать фото. Попробуй ещё раз.')
+        safe_reply(message, 'Не удалось проанализировать фото. Попробуй ещё раз.' if is_ru(message) else "Couldn't analyze the photo. Try again.")
 
 
 @bot.message_handler(func=lambda m: m.content_type == 'text' and starts_with_want(m.text))
 def handle_want_text(message):
     if _is_rate_limited(message.chat.id):
-        safe_reply(message, 'Слишком много запросов. Подожди немного ⏳')
+        safe_reply(message, 'Слишком много запросов. Подожди немного ⏳' if is_ru(message) else 'Too many requests. Hold on ⏳')
         return
     text = message.text.strip()
     if not LINK_SCRAPER_URL:
-        safe_reply(message, 'Сервис временно недоступен. Попробуй позже.')
+        safe_reply(message, 'Сервис временно недоступен. Попробуй позже.' if is_ru(message) else 'Service temporarily unavailable. Try later.')
         return
     try:
         send_typing(message)
@@ -177,20 +193,20 @@ def handle_want_text(message):
             'c': data.get('currency'),
             's': data.get('size'),
         }
-        reply_with_card_button(message, 'text_' + pack_start_param(payload), '📝', 'Создать карточку')
+        reply_with_card_button(message, 'text_' + pack_start_param(payload), '📝')
     except Exception as e:
         log.error('analyze-text error: %s', e, exc_info=True)
-        safe_reply(message, 'Не удалось проанализировать текст. Попробуй ещё раз.')
+        safe_reply(message, 'Не удалось проанализировать текст. Попробуй ещё раз.' if is_ru(message) else "Couldn't analyze the text. Try again.")
 
 
 @bot.message_handler(func=lambda m: m.content_type == 'text' and is_url(m.text))
 def handle_link(message):
     if _is_rate_limited(message.chat.id):
-        safe_reply(message, 'Слишком много запросов. Подожди немного ⏳')
+        safe_reply(message, 'Слишком много запросов. Подожди немного ⏳' if is_ru(message) else 'Too many requests. Hold on ⏳')
         return
     target_url = message.text.strip()
     if not LINK_SCRAPER_URL:
-        safe_reply(message, 'Сервис временно недоступен. Попробуй позже.')
+        safe_reply(message, 'Сервис временно недоступен. Попробуй позже.' if is_ru(message) else 'Service temporarily unavailable. Try later.')
         return
     try:
         send_typing(message)
@@ -209,16 +225,18 @@ def handle_link(message):
         }
         if data.get('image'):
             payload['i'] = data.get('image')[:2000]
-        reply_with_card_button(message, 'link_' + pack_start_param(payload), '🔗', 'Создать карточку')
+        reply_with_card_button(message, 'link_' + pack_start_param(payload), '🔗')
     except Exception as e:
         log.error('parse link error: %s', e, exc_info=True)
-        safe_reply(message, 'Не удалось проанализировать ссылку. Попробуй ещё раз.')
+        safe_reply(message, 'Не удалось проанализировать ссылку. Попробуй ещё раз.' if is_ru(message) else "Couldn't analyze the link. Try again.")
 
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
-    safe_reply(message,
-        'Отправь фото, ссылку или напиши «хочу ...» — я помогу создать карточку! 📸🔗📝')
+    if is_ru(message):
+        safe_reply(message, 'Отправь фото, ссылку или напиши «хочу ...» — я помогу создать карточку! 📸🔗📝')
+    else:
+        safe_reply(message, 'Send a photo, a link, or type "I wish ..." — I\'ll help you create a wish card! 📸🔗📝')
 
 if __name__ == '__main__':
     log.info("Bot started | WEB_APP_URL=%s | threads=4", WEB_APP_URL)

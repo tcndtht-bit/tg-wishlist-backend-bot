@@ -47,6 +47,46 @@ _session.headers['User-Agent'] = 'WishlistBot/1.0'
 if SCRAPER_API_KEY:
     _session.headers['x-api-key'] = SCRAPER_API_KEY
 
+# ── Analytics ────────────────────────────────────────────────
+SUPABASE_URL = os.getenv('SUPABASE_URL', '').rstrip('/')
+SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY', '')
+
+def track_event(user_id, event_name, properties=None):
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY or not user_id:
+        return
+    try:
+        _session.post(
+            f'{SUPABASE_URL}/rest/v1/analytics_events',
+            json={'event_name': event_name, 'user_id': user_id, 'source': 'bot', 'properties': properties or {}},
+            headers={
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': f'Bearer {SUPABASE_ANON_KEY}',
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal',
+            },
+            timeout=5,
+        )
+    except Exception as e:
+        log.warning('track_event failed: %s', e)
+
+def ensure_user_analytics(message):
+    u = message.from_user
+    if not u or not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return
+    user_id = f'tg_{u.id}'
+    cohort_month = __import__('datetime').datetime.utcnow().strftime('%Y-%m')
+    try:
+        resp = _session.get(
+            f'{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}&select=id',
+            headers={'apikey': SUPABASE_ANON_KEY, 'Authorization': f'Bearer {SUPABASE_ANON_KEY}'},
+            timeout=5,
+        )
+        is_new = resp.ok and resp.json() == []
+        if is_new:
+            track_event(user_id, 'user_registered', {'cohort_month': cohort_month})
+    except Exception as e:
+        log.warning('ensure_user_analytics failed: %s', e)
+
 # ── Per-user rate limiter ───────────────────────────────────
 _rate = {}
 RATE_LIMIT = 12      # max messages
@@ -111,6 +151,7 @@ def starts_with_want(text):
 # ── Handlers ────────────────────────────────────────────────
 @bot.message_handler(commands=['start'])
 def start(message):
+    ensure_user_analytics(message)
     if is_ru(message):
         safe_reply(message,
             "Привет! 👋\n\n"
@@ -163,6 +204,7 @@ def handle_photo(message):
         }
         if data.get('image'):
             payload['i'] = data.get('image')[:2000]
+        track_event(f'tg_{message.from_user.id}', 'wish_created', {'method': 'image', 'source': 'bot'})
         reply_with_card_button(message, 'img_' + pack_start_param(payload), '📸')
     except Exception as e:
         log.error('analyze-image error: %s', e, exc_info=True)
@@ -193,6 +235,7 @@ def handle_want_text(message):
             'c': data.get('currency'),
             's': data.get('size'),
         }
+        track_event(f'tg_{message.from_user.id}', 'wish_created', {'method': 'text', 'source': 'bot'})
         reply_with_card_button(message, 'text_' + pack_start_param(payload), '📝')
     except Exception as e:
         log.error('analyze-text error: %s', e, exc_info=True)
@@ -225,6 +268,7 @@ def handle_link(message):
         }
         if data.get('image'):
             payload['i'] = data.get('image')[:2000]
+        track_event(f'tg_{message.from_user.id}', 'wish_created', {'method': 'link', 'source': 'bot'})
         reply_with_card_button(message, 'link_' + pack_start_param(payload), '🔗')
     except Exception as e:
         log.error('parse link error: %s', e, exc_info=True)
